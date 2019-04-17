@@ -1,0 +1,5 @@
+__pycache__/
+.pytest_cache/
+env/
+expert_data/
+htmlcov/

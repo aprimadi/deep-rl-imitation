@@ -1,0 +1,141 @@
+<html>
+<head>
+  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+  <style>
+    .caption-table {
+      width: 300px;
+      font-size: 0.8rem;
+      float: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Definition</h2>
+    <p>
+      We define 1 epoch to be equal to 1000 training steps. Each training step
+      takes batch of data of size 32 randomly. I understand that this is usually not the definition of epoch but for brevity we will use epoch to signify 1000 training steps. The reason I use this definition of epoch is that the amount of data gathered from the expert or using Dagger algorithm varies depending on the number of rollouts. By fixing definition of epoch, we make sure that the size of data being used to train the neural network remain constants for varying amount of data gathered for comparison purpose.
+    </p>
+
+    <hr />
+
+    <h2>Behavioral Cloning</h2>
+    <p>
+      I implemented behavioral cloning which is just supervised learning algorithm implemented for Reinforcement Learning. I use a neural network with 2 fully connected hidden layer with RelU activation function and dropout layer. Both of the hidden layer has 64 neurons.
+    </p>
+
+    <table class="table table-bordered">
+      <thead class="thead-light">
+        <tr>
+          <th>Environment</th>
+          <th>Expert Rewards</th>
+          <th>BC Rewards</th>
+          <th>DAgger Rewards</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Ant-v2</th>
+          <td>4700 (111)</td>
+          <td class="table-danger">-175811 (401621)</td>
+          <td class="table-success">4719 (87)</td>
+        </tr>
+        <tr>
+          <th>HalfCheetah-v2</th>
+          <td>4100 (66)</td>
+          <td class="table-success">4137 (98)</td>
+          <td class="table-success">4120 (81)</td>
+        </tr>
+        <tr>
+          <th>Hopper-v2</th>
+          <td>3777 (4)</td>
+          <td class="table-danger">76 (22)</td>
+          <td class="table-success">3777 (3)</td>
+        </tr>
+        <tr>
+          <th>Humanoid-v2</th>
+          <td>9666 (3089)</td>
+          <td class="table-danger">78 (9)</td>
+          <td class="table-danger">322 (12)</td>
+        </tr>
+        <tr>
+          <th>Reacher-v2</th>
+          <td>-4.3 (1.9)</td>
+          <td class="table-danger">-4980779 (1202499)</td>
+          <td class="table-success">-4.0 (1.8)</td>
+        </tr>
+        <tr>
+          <th>Walker-v2</th>
+          <td>5513 (54)</td>
+          <td class="table-success">5212 (796)</td>
+          <td class="table-success">5496 (57)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table class="table table-sm table-borderless caption-table">
+      <tbody>
+        <tr>
+          <td>Epochs</td>
+          <td>200</td>
+        </tr>
+        <tr>
+          <td>Number of rollouts</td>
+          <td>10</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="clearfix"></div>
+
+    <p>
+      As can be seen from the table, the behavioral cloning algorithm performs well for HalfCheetah-v2 and Walker-v2 while it doesn't perform well on other tasks.
+    </p>
+
+    <h4>Effect of number of demonstration to the accuracy of the algorithm</h4>
+
+    <p>
+      In my experiment I'm interested in finding out whether the number of demonstration has any effect on whether the Behavioral Cloning Algorithm performance. It turns out that Behavioral Cloning Algorithm is very sensitive to the number of demonstration. For this experiment, I fixed the number of epochs to 200 (which is long enough for the neural network to converge). Below is the result of this experiment:
+    </p>
+
+    <div>
+      <img src="./images/bc_num_rollouts.png"></img>
+    </div>
+
+    <p>
+      As can be seen from the graph, with only 1 and 2 rollouts the Behavioral Cloning Algorithm doesn't perform well, it requires at least 3 number of rollouts before it starts to perform well. It turns out that adding more demonstration after a certain point doesn't improve the performance of Behavioral Cloning Algorithm.
+    </p>
+  </div>
+
+  <hr />
+
+  <div class="container">
+    <h2>DAgger</h2>
+
+    <p>
+      The DAgger algorithm performs comparably well to the expert on all of the tasks except Humanoid-v2.
+    </p>
+
+    <p>
+      I also compare DAgger algorithm with Behavioral Cloning algorithm and plot the mean and standard deviation of total reward.
+    </p>
+
+    <img src="images/bc_vs_dagger.png"></img>
+
+    <p>
+      As can be seen from the plot, the DAgger algorithm performs well after about 40 epochs while the BC algorithm starts to perform well after 80 epochs. Even so, the BC algorithm is not consistent, in some epoch it performs well while on other it does not perform so well shown by huge standard deviation. The DAgger algorithm performs almost consistently after 40 epochs.
+    </p>
+  </div>
+
+  <hr />
+
+  <div class="container">
+    <h2>DAgger with LSTM Policy</h2>
+
+    <p>
+      I try to find out if different network architecture can perform well for Humanoid-v2 task. In this experiment, LSTM policy is used.
+    </p>
+  </div>
+</body>
+</html>
