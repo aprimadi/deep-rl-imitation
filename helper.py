@@ -43,6 +43,29 @@ def print_returns_stats(returns, color='green'):
   print(colored('mean return: %s' % np.mean(returns), color))
   print(colored('std of return: %s' % np.std(returns), color))
 
+def lstm(xs, ms, s, scope, nh, init_scale=1.0):
+  nbatch, nin = [v.value for v in xs[0].get_shape()]
+  with tf.variable_scope(scope):
+    wx = tf.get_variable("wx", [nin, nh*4], initializer=ortho_init(init_scale))
+    wh = tf.get_variable("wh", [nh, nh*4], initializer=ortho_init(init_scale))
+    b = tf.get_variable("b", [nh*4], initializer=tf.constant_initializer(0.0))
+
+  c, h = tf.split(axis=1, num_or_size_splits=2, value=s)
+  for idx, (x, m) in enumerate(zip(xs, ms)):
+    c = c*(1-m)
+    h = h*(1-m)
+    z = tf.matmul(x, wx) + tf.matmul(h, wh) + b
+    i, f, o, u = tf.split(axis=1, num_or_size_splits=4, value=z)
+    i = tf.nn.sigmoid(i)
+    f = tf.nn.sigmoid(f)
+    o = tf.nn.sigmoid(o)
+    u = tf.tanh(u)
+    c = f*c + i*u
+    h = o*tf.tanh(c)
+    xs[idx] = h
+  s = tf.concat(axis=1, values=[c, h])
+  return xs, s
+
 def build_model(input_dim, output_dim):
   H = 64 # Size of hidden layer
 
