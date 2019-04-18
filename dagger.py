@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 import tensorflow as tf
@@ -30,8 +31,13 @@ def dagger(env, num_rollouts=1, epochs=1):
 
   rewards = []
 
+  os.makedirs('checkpoints', exist_ok=True)
+
   for epoch in range(epochs):
-    policy_fn = bc.train_bc(sess, data, model=model, curr_epoch=epoch, epochs=1)
+    checkpoint_path = None
+    if epoch == epochs - 1:
+      checkpoint_path = helper.checkpoint_path(env, 'dagger-')
+    policy_fn = bc.train_bc(sess, data, model=model, curr_epoch=epoch, epochs=1, checkpoint_path=checkpoint_path)
 
     _data = bc.run_bc(sess, env, policy_fn, num_rollouts=num_rollouts, stats=False)
     _data['actions'] = helper.ask_expert_actions(env, _data['observations'])
@@ -40,10 +46,8 @@ def dagger(env, num_rollouts=1, epochs=1):
 
   return policy_fn, rewards
 
-def run_dagger():
+def run_dagger(epochs=200, num_rollouts=10):
   envs = ["ant", "half_cheetah", "hopper", "humanoid", "reacher", "walker"]
-  num_rollouts = 10
-  epochs = 200
 
   for env in envs:
     run_dagger_single_env(env, num_rollouts=num_rollouts, epochs=200)
@@ -81,12 +85,8 @@ def run_bc_single_env(env, num_rollouts=10, epochs=200):
       return rewards
 
 
-def compare_dagger_with_bc():
+def compare_dagger_with_bc(epochs=200, num_rollouts=10):
   env = "walker"
-  num_rollouts = 10
-  epochs = 200
-  # num_rollouts = 10
-  # epochs = 10
 
   s_epochs = []
   s_rewards = []
@@ -117,8 +117,18 @@ def compare_dagger_with_bc():
   plt.show()
 
 def main():
-  # run_dagger()
-  compare_dagger_with_bc()
+  parser = argparse.ArgumentParser()
+  parser.add_argument('task', type=str, help='run_all|compare_dagger_vs_bc')
+  parser.add_argument('--epochs', type=int, default=200)
+  parser.add_argument('--num_rollouts', type=int, default=10)
+  args = parser.parse_args()
+
+  if args.task == "run_all":
+    run_dagger(epochs=args.epochs, num_rollouts=args.num_rollouts)
+  elif args.task == "compare_dagger_vs_bc":
+    compare_dagger_with_bc(epochs=args.epochs, num_rollouts=args.num_rollouts)
+  else:
+    print("Unsupported task")
 
 if __name__ == '__main__':
   main()

@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 import tensorflow as tf
@@ -12,20 +13,29 @@ import load_policy
 import tf_util
 import helper
 
-def train_bc(sess, data, model=None, curr_epoch=None, epochs=1, batch_size=32, debug=False):
+def train_bc(sess, data, model=None, curr_epoch=None, epochs=1, batch_size=32, debug=False, checkpoint_path=None):
   mean, stdev = helper.mean_and_stdev(data['observations'])
 
   if model:
-    input_ph, output_ph, mean_ph, stdev_ph, output_pred, mse, opt = model
+    m = model
+    input_ph, output_ph   = m['input_ph'], m['output_ph']
+    mean_v, stdev_v       = m['mean_v'], m['stdev_v']
+    output_pred, mse, opt = m['output_pred'], m['mse'], m['opt']
   else:
     input_dim = len(data['observations'][0])
     output_dim = len(data['actions'][0])
-    input_ph, output_ph, mean_ph, stdev_ph, output_pred, mse, opt = \
-      helper.build_model(input_dim, output_dim)
+    m = helper.build_model(input_dim, output_dim)
+    input_ph, output_ph   = m['input_ph'], m['output_ph']
+    mean_v, stdev_v       = m['mean_v'], m['stdev_v']
+    output_pred, mse, opt = m['output_pred'], m['mse'], m['opt']
 
     sess.run(tf.global_variables_initializer())
 
-  saver = tf.train.Saver()
+  mean_v.load(mean, session=sess)
+  stdev_v.load(stdev, session=sess)
+
+  if checkpoint_path:
+    saver = tf.train.Saver()
 
   # run training
   n_inputs = len(data['observations'])
@@ -35,21 +45,19 @@ def train_bc(sess, data, model=None, curr_epoch=None, epochs=1, batch_size=32, d
     for i in range(1_000):
       indices = np.random.randint(n_inputs, size=batch_size)
 
-      _mean = np.tile(mean, (32, 1))
-      _stdev = np.tile(stdev, (32, 1))
-
       input_batch = data['observations'][indices]
       output_batch = data['actions'][indices]
 
-      _, mse_run = sess.run([opt, mse], feed_dict={input_ph: input_batch, output_ph: output_batch, mean_ph: _mean, stdev_ph: _stdev})
+      _, mse_run = sess.run([opt, mse], feed_dict={input_ph: input_batch, output_ph: output_batch})
 
     if curr_epoch:
       print('epoch: {0:03d} mse: {1:.4f}'.format(curr_epoch, mse_run))
     else:
       print('epoch: {0:03d} mse: {1:.4f}'.format(epoch, mse_run))
-    saver.save(sess, '/tmp/model.ckpt')
+    if checkpoint_path and epoch == epochs - 1:
+      saver.save(sess, checkpoint_path)
 
-  policy_fn = tf_util.function([input_ph], output_pred, givens={mean_ph: mean[None, :], stdev_ph: stdev[None, :]})
+  policy_fn = tf_util.function([input_ph], output_pred)
   return policy_fn
 
 def run_bc(sess, envstr, policy_fn, num_rollouts=1, debug=False, stats=True):
@@ -91,10 +99,10 @@ def run_bc(sess, envstr, policy_fn, num_rollouts=1, debug=False, stats=True):
   }
   return data
 
-def compare_bc_on_multiple_envs():
+def compare_bc_on_multiple_envs(epochs=200, num_rollouts=10):
   envs = ["ant", "half_cheetah", "hopper", "humanoid", "reacher", "walker"]
-  epochs = 200
-  num_rollouts = 10
+
+  os.makedirs('checkpoints', exist_ok=True)
 
   for env in envs:
     print(colored("ENV: %s" % env, 'green'))
@@ -102,13 +110,13 @@ def compare_bc_on_multiple_envs():
     with tf.Session():
       with tf.variable_scope(env):
         sess = tf.get_default_session()
-        policy_fn = train_bc(sess, data, epochs=epochs)
+        policy_fn = train_bc(sess, data, epochs=epochs, checkpoint_path=helper.checkpoint_path(env, 'bc-'))
 
         run_bc(sess, env, policy_fn, num_rollouts=num_rollouts)
 
         print("==============================================================")
 
-def graph_hyperparameter():
+def graph_hyperparameter(epochs=200):
   env = "half_cheetah"
 
   num_rollouts_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -135,8 +143,18 @@ def graph_hyperparameter():
   plt.show()
 
 def main():
-  compare_bc_on_multiple_envs()
-  # graph_hyperparameter()
+  parser = argparse.ArgumentParser()
+  parser.add_argument('task', type=str, help='run_all|graph_hyperparameter')
+  parser.add_argument('--epochs', type=int, default=200)
+  parser.add_argument('--num_rollouts', type=int, default=10)
+  args = parser.parse_args()
+
+  if args.task == "run_all":
+    compare_bc_on_multiple_envs(epochs=args.epochs, num_rollouts=args.num_rollouts)
+  elif args.task == "graph_hyperparameter":
+    graph_hyperparameter(epochs=args.epochs)
+  else:
+    print("Unsupported task")
 
 if __name__ == '__main__':
   main()

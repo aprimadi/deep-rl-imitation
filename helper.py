@@ -23,9 +23,9 @@ def expert_policy_file(envstr):
   _envname = envname(envstr)
   return "experts/%s.pkl" % _envname
 
-def checkpoint_path(envstr):
+def checkpoint_path(envstr, prefix=''):
   _envname = envname(envstr)
-  return "checkpoints/%s.ckpt" % _envname
+  return "checkpoints/%s%s.ckpt" % (prefix, _envname)
 
 def print_returns_stats(returns, color='green'):
   print(colored('returns: %s' % returns, color))
@@ -37,8 +37,12 @@ def build_model(input_dim, output_dim):
 
   input_ph  = tf.placeholder(tf.float32, shape=[None, input_dim])
   output_ph = tf.placeholder(tf.float32, shape=[None, output_dim])
-  mean_ph   = tf.placeholder(tf.float32, shape=[None, input_dim])
-  stdev_ph  = tf.placeholder(tf.float32, shape=[None, input_dim])
+
+  mean_v = tf.get_variable(name='mean', dtype=tf.float32, shape=[input_dim], trainable=False)
+  stdev_v = tf.get_variable(name='stdev', dtype=tf.float32, shape=[input_dim], trainable=False)
+
+  mean_stacked  = tf.reshape(tf.tile(mean_v, tf.shape(input_ph)[0:1]), tf.shape(input_ph))
+  stdev_stacked = tf.reshape(tf.tile(stdev_v, tf.shape(input_ph)[0:1]), tf.shape(input_ph))
 
   W0 = tf.get_variable(name='W0', shape=[input_dim, H], initializer=tf.initializers.random_normal)
   b0 = tf.get_variable(name='b0', shape=[H], initializer=tf.zeros_initializer)
@@ -50,8 +54,8 @@ def build_model(input_dim, output_dim):
   b2 = tf.get_variable(name='b2', shape=[output_dim], initializer=tf.zeros_initializer)
 
   # Build model
-  layer = (input_ph - mean_ph) / (stdev_ph + 1e-6)
-  layer = tf.matmul(layer, W0) + b0
+  input_norm = (input_ph - mean_stacked) / (stdev_stacked + 1e-6)
+  layer = tf.matmul(input_norm, W0) + b0
   layer = tf.nn.relu(layer)
   # layer = tl.activation.swish(layer)
   layer = tf.layers.dropout(layer)
@@ -68,13 +72,17 @@ def build_model(input_dim, output_dim):
   # create optimizer
   opt = tf.train.AdamOptimizer().minimize(mse)
 
-  return input_ph, output_ph, mean_ph, stdev_ph, output_pred, mse, opt
-
-def normalize_data(data):
-  mean = np.mean(data, axis=0)
-  stdev = np.std(data, axis=0)
-  data = (data - mean) / (stdev + 1e-6)
-  return data, mean, stdev
+  d = {
+    'input_ph': input_ph,
+    'output_ph': output_ph,
+    'mean_v': mean_v,
+    'stdev_v': stdev_v,
+    'output_pred': output_pred,
+    'mse': mse,
+    'opt': opt,
+    'input_norm': input_norm,
+  }
+  return d
 
 def mean_and_stdev(data):
   mean = np.mean(data, axis=0)
