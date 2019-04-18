@@ -19,6 +19,17 @@ def envname(envstr):
   }
   return d[envstr]
 
+def input_output_shape(envstr):
+  d = {
+    "ant": [111, 8],
+    "half_cheetah": [17, 6],
+    "hopper": [11, 3],
+    "humanoid": [376, 17],
+    "reacher": [11, 2],
+    "walker": [17, 6],
+  }
+  return d[envstr]
+
 def expert_policy_file(envstr):
   _envname = envname(envstr)
   return "experts/%s.pkl" % _envname
