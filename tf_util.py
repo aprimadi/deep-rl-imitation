@@ -211,14 +211,14 @@ def batchnorm(x, name, phase, updates, gamma=0.96):
 # ================================================================
 
 def function(inputs, outputs, updates=None, givens=None):
-    if isinstance(outputs, list):
-        return _Function(inputs, outputs, updates, givens=givens)
-    elif isinstance(outputs, (dict, collections.OrderedDict)):
-        f = _Function(inputs, outputs.values(), updates, givens=givens)
-        return lambda *inputs : type(outputs)(zip(outputs.keys(), f(*inputs)))
-    else:
-        f = _Function(inputs, [outputs], updates, givens=givens)
-        return lambda *inputs : f(*inputs)[0]
+  if isinstance(outputs, list):
+    return _Function(inputs, outputs, updates, givens=givens)
+  elif isinstance(outputs, (dict, collections.OrderedDict)):
+    f = _Function(inputs, outputs.values(), updates, givens=givens)
+    return lambda *inputs : type(outputs)(zip(outputs.keys(), f(*inputs)))
+  else:
+    f = _Function(inputs, [outputs], updates, givens=givens)
+    return lambda *inputs : f(*inputs)[0]
 
 class _Function(object):
   def __init__(self, inputs, outputs, updates, givens, check_nan=False):

@@ -59,24 +59,7 @@ def seq_to_batch(h, flat = False):
   else:
     return tf.reshape(tf.stack(values=h, axis=1), [-1])
 
-def ortho_init(scale=1.0):
-  def _ortho_init(shape, dtype, partition_info=None):
-    #lasagne ortho init for tf
-    shape = tuple(shape)
-    if len(shape) == 2:
-      flat_shape = shape
-    elif len(shape) == 4: # assumes NHWC - Num_samples x Height x Width x Channels
-      flat_shape = (np.prod(shape[:-1]), shape[-1])
-    else:
-      raise NotImplementedError
-    a = np.random.normal(0.0, 1.0, flat_shape)
-    u, _, v = np.linalg.svd(a, full_matrices=False)
-    q = u if u.shape == flat_shape else v # pick the one with the correct shape
-    q = q.reshape(shape)
-    return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
-  return _ortho_init
-
-def lstm(xs, s, scope, nh, init_scale=1.0):
+def lstm(xs, s, scope, nh):
   """LSTM Cell.
 
   Arguments:
@@ -84,16 +67,15 @@ def lstm(xs, s, scope, nh, init_scale=1.0):
     s: State tensor (memory in LSTM, contains h[t-1] and c[t-1]).
     scope: Variable scope.
     nh: Size of hidden layer.
-    init_scale: Scalar value used to initialize weight using ortho_init.
 
   Returns:
     Tensor, output of softmax transformation.
   """
   nbatch, nin = [v.value for v in xs[0].get_shape()]
   with tf.variable_scope(scope):
-    wx = tf.get_variable("wx", [nin, nh*4], initializer=ortho_init(init_scale))
-    wh = tf.get_variable("wh", [nh, nh*4], initializer=ortho_init(init_scale))
-    b = tf.get_variable("b", [nh*4], initializer=tf.constant_initializer(0.0))
+    wx = tf.get_variable("wx", shape=[nin, nh*4], initializer=tf.initializers.random_normal)
+    wh = tf.get_variable("wh", shape=[nh, nh*4], initializer=tf.initializers.random_normal)
+    b = tf.get_variable("b", shape=[nh*4], initializer=tf.constant_initializer(0.0))
 
   c, h = tf.split(axis=1, num_or_size_splits=2, value=s)
   for idx, x in enumerate(xs):
@@ -109,10 +91,11 @@ def lstm(xs, s, scope, nh, init_scale=1.0):
   s = tf.concat(axis=1, values=[c, h])
   return xs, s
 
-def fc(x, nh, *, init_scale=1.0, init_bias=0.0):
+def fc(x, nh, scope, *, init_scale=1.0, init_bias=0.0):
   nin = x.get_shape()[1].value
-  w = tf.get_variable("w", [nin, nh], initializer=ortho_init(init_scale))
-  b = tf.get_variable("b", [nh], initializer=tf.constant_initializer(init_bias))
+  with tf.variable_scope(scope):
+    w = tf.get_variable("w", shape=[nin, nh], initializer=tf.initializers.random_normal)
+    b = tf.get_variable("b", shape=[nh], initializer=tf.constant_initializer(init_bias))
   return tf.matmul(x, w)+b
 
 def build_model(input_dim, output_dim):
@@ -167,12 +150,12 @@ def build_model(input_dim, output_dim):
   }
   return d
 
-def build_lstm_model(input_dim, output_dim, scope):
+def build_lstm_model(input_dim, output_dim, batch_size=32):
   H_fc = 64   # Size of FC hidden layer
   H_lstm = 64 # Size of LSTM layer
 
-  input_ph = tf.placeholder(tf.float32, shape=[None, input_dim])
-  output_ph = tf.placeholder(tf.float32, shape=[None, output_dim])
+  input_ph = tf.placeholder(tf.float32, shape=[batch_size, input_dim])
+  output_ph = tf.placeholder(tf.float32, shape=[batch_size, output_dim])
 
   # Store state of LSTM to be feed in subsequent call (Ct, Ht)
   S = tf.placeholder(tf.float32, shape=[1, 2*H_lstm])
@@ -184,16 +167,17 @@ def build_lstm_model(input_dim, output_dim, scope):
   stdev_stacked = tf.reshape(tf.tile(stdev_v, tf.shape(input_ph)[0:1]), tf.shape(input_ph))
 
   input_norm  = (input_ph - mean_stacked) / (stdev_stacked + 1e-6)
-  layer       = fc(input_norm, H_fc)
+  layer       = fc(input_norm, H_fc, "fc0")
   layer       = tf.nn.relu(layer)
   layer       = tf.layers.dropout(layer)
-  layer       = fc(layer, H_fc)           # Shape: batch x 64
+  layer       = fc(layer, H_fc, "fc1")    # Shape: batch x 64
   layer       = tf.nn.relu(layer)
   layer       = tf.layers.dropout(layer)  # Shape: batch x 64
-  xs          = batch_to_seq(layer, 1, 32)
-  h5, snew    = lstm(xs, S, )
+  flat        = tf.layers.flatten(layer)
+  xs          = batch_to_seq(flat, 1, batch_size)
+  h5, snew    = lstm(xs, S, "lstm", H_lstm)
   h           = seq_to_batch(h5)
-  layer       = fc(h, H_fc)
+  layer       = fc(h, output_dim, "fc2")
 
   initial_state = np.zeros(S.shape.as_list(), dtype=float)
 
