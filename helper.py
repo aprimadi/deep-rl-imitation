@@ -43,6 +43,22 @@ def print_returns_stats(returns, color='green'):
   print(colored('mean return: %s' % np.mean(returns), color))
   print(colored('std of return: %s' % np.std(returns), color))
 
+def batch_to_seq(h, nbatch, nsteps, flat=False):
+  if flat:
+    h = tf.reshape(h, [nbatch, nsteps])
+  else:
+    h = tf.reshape(h, [nbatch, nsteps, -1])
+  return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=nsteps, value=h)]
+
+def seq_to_batch(h, flat = False):
+  shape = h[0].get_shape().as_list()
+  if not flat:
+    assert(len(shape) > 1)
+    nh = h[0].get_shape()[-1].value
+    return tf.reshape(tf.concat(axis=1, values=h), [-1, nh])
+  else:
+    return tf.reshape(tf.stack(values=h, axis=1), [-1])
+
 def ortho_init(scale=1.0):
   def _ortho_init(shape, dtype, partition_info=None):
     #lasagne ortho init for tf
@@ -60,12 +76,11 @@ def ortho_init(scale=1.0):
     return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
   return _ortho_init
 
-def lstm(xs, ms, s, scope, nh, init_scale=1.0):
+def lstm(xs, s, scope, nh, init_scale=1.0):
   """LSTM Cell.
 
   Arguments:
-    xs: Input tensor.
-    ms: Mask tensor, useful to implement dropout, if 1 means to dropout.
+    xs: List/sequence of input tensors.
     s: State tensor (memory in LSTM, contains h[t-1] and c[t-1]).
     scope: Variable scope.
     nh: Size of hidden layer.
@@ -81,9 +96,7 @@ def lstm(xs, ms, s, scope, nh, init_scale=1.0):
     b = tf.get_variable("b", [nh*4], initializer=tf.constant_initializer(0.0))
 
   c, h = tf.split(axis=1, num_or_size_splits=2, value=s)
-  for idx, (x, m) in enumerate(zip(xs, ms)):
-    c = c*(1-m)
-    h = h*(1-m)
+  for idx, x in enumerate(xs):
     z = tf.matmul(x, wx) + tf.matmul(h, wh) + b
     i, f, o, u = tf.split(axis=1, num_or_size_splits=4, value=z)
     i = tf.nn.sigmoid(i)
@@ -95,6 +108,12 @@ def lstm(xs, ms, s, scope, nh, init_scale=1.0):
     xs[idx] = h
   s = tf.concat(axis=1, values=[c, h])
   return xs, s
+
+def fc(x, nh, *, init_scale=1.0, init_bias=0.0):
+  nin = x.get_shape()[1].value
+  w = tf.get_variable("w", [nin, nh], initializer=ortho_init(init_scale))
+  b = tf.get_variable("b", [nh], initializer=tf.constant_initializer(init_bias))
+  return tf.matmul(x, w)+b
 
 def build_model(input_dim, output_dim):
   H = 64 # Size of hidden layer
@@ -145,6 +164,58 @@ def build_model(input_dim, output_dim):
     'mse': mse,
     'opt': opt,
     'input_norm': input_norm,
+  }
+  return d
+
+def build_lstm_model(input_dim, output_dim, scope):
+  H_fc = 64   # Size of FC hidden layer
+  H_lstm = 64 # Size of LSTM layer
+
+  input_ph = tf.placeholder(tf.float32, shape=[None, input_dim])
+  output_ph = tf.placeholder(tf.float32, shape=[None, output_dim])
+
+  # Store state of LSTM to be feed in subsequent call (Ct, Ht)
+  S = tf.placeholder(tf.float32, shape=[1, 2*H_lstm])
+
+  mean_v = tf.get_variable(name='mean', dtype=tf.float32, shape=[input_dim], trainable=False)
+  stdev_v = tf.get_variable(name='stdev', dtype=tf.float32, shape=[input_dim], trainable=False)
+
+  mean_stacked  = tf.reshape(tf.tile(mean_v, tf.shape(input_ph)[0:1]), tf.shape(input_ph))
+  stdev_stacked = tf.reshape(tf.tile(stdev_v, tf.shape(input_ph)[0:1]), tf.shape(input_ph))
+
+  input_norm  = (input_ph - mean_stacked) / (stdev_stacked + 1e-6)
+  layer       = fc(input_norm, H_fc)
+  layer       = tf.nn.relu(layer)
+  layer       = tf.layers.dropout(layer)
+  layer       = fc(layer, H_fc)           # Shape: batch x 64
+  layer       = tf.nn.relu(layer)
+  layer       = tf.layers.dropout(layer)  # Shape: batch x 64
+  xs          = batch_to_seq(layer, 1, 32)
+  h5, snew    = lstm(xs, S, )
+  h           = seq_to_batch(h5)
+  layer       = fc(h, H_fc)
+
+  initial_state = np.zeros(S.shape.as_list(), dtype=float)
+
+  output_pred = layer
+
+  # create loss
+  mse = tf.reduce_mean(0.5 * tf.square(output_pred - output_ph))
+  # create optimizer
+  opt = tf.train.AdamOptimizer().minimize(mse)
+
+  d = {
+    'input_ph': input_ph,
+    'output_ph': output_ph,
+    'mean_v': mean_v,
+    'stdev_v': stdev_v,
+    'S': S,
+    'output_pred': output_pred,
+    'mse': mse,
+    'opt': opt,
+    'input_norm': input_norm,
+    'state': snew,
+    'initial_state': initial_state,
   }
   return d
 

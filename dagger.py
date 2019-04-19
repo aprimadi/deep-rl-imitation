@@ -50,7 +50,7 @@ def run_dagger(epochs=200, num_rollouts=10):
   envs = ["ant", "half_cheetah", "hopper", "humanoid", "reacher", "walker"]
 
   for env in envs:
-    run_dagger_single_env(env, num_rollouts=num_rollouts, epochs=200)
+    run_dagger_single_env(env, num_rollouts=num_rollouts, epochs=epochs)
 
 def run_dagger_single_env(env, num_rollouts=10, epochs=200):
   print(colored("ENV: %s" % env, 'green'))
